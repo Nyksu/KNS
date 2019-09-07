@@ -1,0 +1,172 @@
+unit Dp_main;
+
+interface
+
+uses
+  Windows, Messages, SysUtils, Classes, Graphics, Controls, Forms, Dialogs,
+  StdCtrls, Mask, ToolEdit, ExtCtrls, Db, IBCustomDataSet, IBQuery,
+  IBDatabase, RXSwitch, Buttons;
+
+type
+  Tfr_main_dp = class(TForm)
+    Panel1: TPanel;
+    Panel2: TPanel;
+    Panel3: TPanel;
+    Splitter1: TSplitter;
+    Panel4: TPanel;
+    Panel5: TPanel;
+    Splitter2: TSplitter;
+    Panel6: TPanel;
+    Label1: TLabel;
+    Label2: TLabel;
+    ed_source: TFilenameEdit;
+    ed_target: TFilenameEdit;
+    ls_source: TListBox;
+    ls_targer: TListBox;
+    BitBtn1: TBitBtn;
+    bt_make: TButton;
+    sw_source: TRxSwitch;
+    sw_target: TRxSwitch;
+    DB_s: TIBDatabase;
+    tr_s: TIBTransaction;
+    q_source: TIBQuery;
+    DB_t: TIBDatabase;
+    tr_t: TIBTransaction;
+    q_target: TIBQuery;
+    procedure sw_sourceOn(Sender: TObject);
+    procedure sw_sourceOff(Sender: TObject);
+    procedure sw_targetOn(Sender: TObject);
+    procedure sw_targetOff(Sender: TObject);
+    procedure BitBtn1Click(Sender: TObject);
+    procedure bt_makeClick(Sender: TObject);
+  private
+    { Private declarations }
+  public
+    { Public declarations }
+  end;
+
+var
+  fr_main_dp: Tfr_main_dp;
+
+implementation
+
+{$R *.DFM}
+
+procedure Tfr_main_dp.sw_sourceOn(Sender: TObject);
+begin
+  try
+  If (ed_source.Text<>'')or(ed_source.Text<>'*.gdb') Then Begin
+     DB_s.DatabaseName:=ed_source.Text;
+     DB_s.Connected:=true;
+     tr_s.Active:=true;
+  end
+  Else sw_source.StateOn:=false;
+  except
+    ShowMessage('Не коннектится!');
+    sw_source.StateOn:=false;
+  end;
+end;
+
+procedure Tfr_main_dp.sw_sourceOff(Sender: TObject);
+begin
+  If tr_s.InTransaction Then
+     If MessageDlg('Транзакция активна! Сохранить?',
+                   mtConfirmation, [mbYes, mbNo], 0) = mrYes Then tr_s.Commit
+     Else tr_s.Rollback;
+  If DB_s.Connected Then DB_s.Connected:=false;
+end;
+
+procedure Tfr_main_dp.sw_targetOn(Sender: TObject);
+begin
+  try
+  If (ed_target.Text<>'')or(ed_target.Text<>'*.gdb') Then Begin
+     DB_t.DatabaseName:=ed_target.Text;
+     DB_t.Connected:=true;
+     tr_t.Active:=true;
+  end
+  Else sw_target.StateOn:=false;
+  except
+    ShowMessage('Не коннектится!');
+    sw_target.StateOn:=false;
+  end;
+end;
+
+procedure Tfr_main_dp.sw_targetOff(Sender: TObject);
+begin
+  If tr_t.InTransaction Then
+     If MessageDlg('Транзакция активна! Сохранить?',
+                   mtConfirmation, [mbYes, mbNo], 0) = mrYes Then tr_t.Commit
+     Else tr_t.Rollback;
+  If DB_t.Connected Then DB_t.Connected:=false;
+end;
+
+procedure Tfr_main_dp.BitBtn1Click(Sender: TObject);
+begin
+  Close;
+end;
+
+procedure Tfr_main_dp.bt_makeClick(Sender: TObject);
+var
+  ss : string;
+begin
+  If DB_t.Connected and DB_s.Connected Then Begin
+     try
+       If not tr_t.InTransaction Then tr_t.StartTransaction;
+     //Заливаем пласты
+       q_source.Active:=false;
+       q_source.SQL.text:='Select * from WELL_PROPERTY';
+       q_source.Open;
+       While not q_source.EOF Do Begin
+         q_target.SQL.Text:='Update WELL_PROPERTY SET ';
+         q_target.SQL.Add('WELL_ID='+q_source.FieldByName('WELL_ID').AsString+',');
+         q_target.SQL.Add('K_ACCEPT='+q_source.FieldByName('K_ACCEPT').AsString+',');
+         q_target.SQL.Add('ACCEPT='+q_source.FieldByName('ACCEPT').AsString+',');
+         q_target.SQL.Add('PRESSURE='+q_source.FieldByName('PRESSURE').AsString+',');
+         q_target.SQL.Add('PLAST_ID='+q_source.FieldByName('PLAST_ID').AsString+' ');
+         q_target.SQL.Add('Where ');
+         q_target.SQL.Add('ID='+q_source.FieldByName('ID').AsString);
+         q_target.ExecSQL;
+         q_source.Next;
+       end;
+       q_source.First;
+       While not q_source.EOF Do Begin
+         q_target.SQL.Text:='Select * from WELL_PROPERTY Where id='+q_source.FieldByName('ID').AsString;
+         q_target.Active:=true;
+         If q_target.RecordCount=0 Then Begin
+           q_target.Active:=false;
+           q_target.SQL.Text:='Insert into WELL_PROPERTY (ID,WELL_ID,K_ACCEPT,ACCEPT,PRESSURE,PLAST_ID) ';
+           ss:='Values ('+q_source.FieldByName('ID').AsString+','+
+                        q_source.FieldByName('WELL_ID').AsString+','+
+                        q_source.FieldByName('K_ACCEPT').AsString+','+
+                        q_source.FieldByName('ACCEPT').AsString+','+
+                        q_source.FieldByName('PRESSURE').AsString+','+
+                        q_source.FieldByName('PLAST_ID').AsString+')';
+           q_target.SQL.Add(ss);
+           q_target.ExecSQL;
+         end;
+         q_source.Next;
+       end;
+     //Обнавляем скважины
+       q_source.Active:=false;
+       q_source.SQL.text:='Select * from WELL';
+       q_source.Open;
+       While not q_source.EOF Do Begin
+         q_target.SQL.Text:='Update WELL_PROPERTY SET ';
+         q_target.SQL.Add('KUST_ID='+q_source.FieldByName('KUST_ID').AsString+',');
+         q_target.SQL.Add('FOUND_STATE_ID='+q_source.FieldByName('FOUND_STATE_ID').AsString+',');
+         q_target.SQL.Add('D_SHTUCER='+q_source.FieldByName('D_SHTUCER').AsString+',');
+         q_target.SQL.Add('DAY_PUMP='+q_source.FieldByName('DAY_PUMP').AsString+' ');
+         q_target.SQL.Add('Where ');
+         q_target.SQL.Add('ID='+q_source.FieldByName('ID').AsString);
+         q_target.ExecSQL;
+         q_source.Next;
+       end;
+
+       If tr_t.InTransaction Then tr_t.Commit;
+     except
+       If tr_t.InTransaction Then tr_t.Rollback;
+     end;
+  end;
+end;
+
+end.
